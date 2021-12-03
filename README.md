@@ -12,6 +12,9 @@ IDEX Farm is an adaptation of the standard [MasterChef](https://github.com/sushi
 ## Audit
 
 IDEXFarm is covered by [Silverton's comprehensive audit](https://github.com/idexio/idex-contracts-silverton/blob/main/audits/IDEX%20v3%20-%20Quantstamp.pdf).
+## Bug Bounty
+
+The smart contracts in this repo are covered by a [bug bounty via Immunefi](https://www.immunefi.com/bounty/idex).
 
 ## License
 
