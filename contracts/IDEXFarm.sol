@@ -20,7 +20,7 @@ interface IIDEXMigrator {
   function migrate(IERC20 token, bool isToken1Quote, address WETH) external returns (IERC20);
 }
 
-contract IDEXFarm is Ownable {
+contract IDEXFarm_v2 is Ownable {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
 
@@ -52,11 +52,11 @@ contract IDEXFarm is Ownable {
   }
 
   // The reward tokens
-  IERC20 public rewardToken0;
-  IERC20 public rewardToken1;
+  IERC20 public reward0Token;
+  IERC20 public reward1Token;
   // Reward tokens created per block.
-  uint256 public rewardToken0PerBlock;
-  uint256 public rewardToken1PerBlock;
+  uint256 public reward0TokenPerBlock;
+  uint256 public reward1TokenPerBlock;
   // The migrator contract. It has a lot of power. Can only be set through governance (owner).
   IIDEXMigrator public migrator;
 
@@ -75,11 +75,11 @@ contract IDEXFarm is Ownable {
     uint256 amount
   );
 
-  constructor(IERC20 _rewardToken0, IERC20 _rewardToken1, uint256 _rewardToken0PerBlock, uint256 _rewardToken1PerBlock) public {
-    rewardToken0 = _rewardToken0;
-    rewardToken1 = _rewardToken1;
-    rewardToken0PerBlock = _rewardToken0PerBlock;
-    rewardToken1PerBlock = _rewardToken1PerBlock;
+  constructor(IERC20 _reward0Token, IERC20 _reward1Token, uint256 _reward0TokenPerBlock, uint256 _reward1TokenPerBlock) public {
+    reward0Token = _reward0Token;
+    reward1Token = _reward1Token;
+    reward0TokenPerBlock = _reward0TokenPerBlock;
+    reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
   function poolLength() external view returns (uint256) {
@@ -164,11 +164,11 @@ contract IDEXFarm is Ownable {
     if (block.number > pool.lastRewardBlock && lpSupply != 0) {
       uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
       uint256 reward0Quantity =
-        multiplier.mul(rewardToken0PerBlock).mul(pool.allocPoint).div(
+        multiplier.mul(reward0TokenPerBlock).mul(pool.allocPoint).div(
           totalAllocPoint
         );
       uint256 reward1Quantity =
-        multiplier.mul(rewardToken1PerBlock).mul(pool.allocPoint).div(
+        multiplier.mul(reward1TokenPerBlock).mul(pool.allocPoint).div(
           totalAllocPoint
         );
       accReward0PerShare = accReward0PerShare.add(
@@ -205,11 +205,11 @@ contract IDEXFarm is Ownable {
     }
     uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
     uint256 reward0Quantity =
-      multiplier.mul(rewardToken0PerBlock).mul(pool.allocPoint).div(
+      multiplier.mul(reward0TokenPerBlock).mul(pool.allocPoint).div(
         totalAllocPoint
       );
     uint256 reward1Quantity =
-      multiplier.mul(rewardToken1PerBlock).mul(pool.allocPoint).div(
+      multiplier.mul(reward1TokenPerBlock).mul(pool.allocPoint).div(
         totalAllocPoint
       );
     pool.accReward0PerShare = pool.accReward0PerShare.add(
@@ -232,10 +232,10 @@ contract IDEXFarm is Ownable {
       uint256 pending1 =
         user.amount.mul(pool.accReward1PerShare).div(1e12).sub(user.reward1Debt);
       if (pending0 > 0) {
-        safeRewardTokenTransfer(rewardToken0, msg.sender, pending0);
+        safeRewardTokenTransfer(reward0Token, msg.sender, pending0);
       }
       if (pending1 > 0) {
-        safeRewardTokenTransfer(rewardToken1, msg.sender, pending1);
+        safeRewardTokenTransfer(reward1Token, msg.sender, pending1);
       }
     }
     if (_amount > 0) {
@@ -262,10 +262,10 @@ contract IDEXFarm is Ownable {
     uint256 pending1 =
       user.amount.mul(pool.accReward1PerShare).div(1e12).sub(user.reward1Debt);
     if (pending0 > 0) {
-      safeRewardTokenTransfer(rewardToken0, msg.sender, pending0);
+      safeRewardTokenTransfer(reward0Token, msg.sender, pending0);
     }
     if (pending1 > 0) {
-      safeRewardTokenTransfer(rewardToken1, msg.sender, pending1);
+      safeRewardTokenTransfer(reward1Token, msg.sender, pending1);
     }
     if (_amount > 0) {
       user.amount = user.amount.sub(_amount);
@@ -298,15 +298,15 @@ contract IDEXFarm is Ownable {
   // Admin controls //
 
   // Assert _withUpdate or new emission rate will be retroactive to last update for all pools
-  function setRewardsPerBlock(uint256 _rewardToken0PerBlock, uint256 _rewardToken1PerBlock, bool _withUpdate)
+  function setRewardsPerBlock(uint256 _reward0TokenPerBlock, uint256 _reward1TokenPerBlock, bool _withUpdate)
     external
     onlyOwner
   {
     if (_withUpdate) {
       massUpdatePools();
     }
-    rewardToken0PerBlock = _rewardToken0PerBlock;
-    rewardToken1PerBlock = _rewardToken1PerBlock;
+    reward0TokenPerBlock = _reward0TokenPerBlock;
+    reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
   function withdrawRewardToken(IERC20 rewardToken, uint256 _amount) external onlyOwner {
