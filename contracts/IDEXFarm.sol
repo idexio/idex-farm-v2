@@ -310,6 +310,7 @@ contract IDEXFarm_v2 is Ownable {
   }
 
   function withdrawRewardToken(IERC20 rewardToken, uint256 _amount) external onlyOwner {
+    require(rewardToken == reward0Token || rewardToken == reward1Token, 'withdrawRewardToken: invalid rewardToken');
     rewardToken.transfer(msg.sender, _amount);
   }
 }
