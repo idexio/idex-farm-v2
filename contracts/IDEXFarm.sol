@@ -6,6 +6,7 @@ import '@openzeppelin/contracts/math/SafeMath.sol';
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 import '@openzeppelin/contracts/access/Ownable.sol';
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 // import "@nomiclabs/buidler/console.sol";
 
@@ -20,7 +21,7 @@ interface IIDEXMigrator {
   function migrate(IERC20 token, bool isToken1Quote, address WETH) external returns (IERC20);
 }
 
-contract IDEXFarm_v2 is Ownable {
+contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
 
@@ -222,7 +223,7 @@ contract IDEXFarm_v2 is Ownable {
   }
 
   // Deposit LP tokens to Farm for reward allocation.
-  function deposit(uint256 _pid, uint256 _amount) public {
+  function deposit(uint256 _pid, uint256 _amount) public nonReentrant {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][msg.sender];
     updatePool(_pid);
@@ -252,7 +253,7 @@ contract IDEXFarm_v2 is Ownable {
   }
 
   // Withdraw LP tokens from Farm.
-  function withdraw(uint256 _pid, uint256 _amount) public {
+  function withdraw(uint256 _pid, uint256 _amount) public nonReentrant {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][msg.sender];
     require(user.amount >= _amount, 'withdraw: not good');
@@ -277,7 +278,7 @@ contract IDEXFarm_v2 is Ownable {
   }
 
   // Withdraw without caring about rewards. EMERGENCY ONLY.
-  function emergencyWithdraw(uint256 _pid) public {
+  function emergencyWithdraw(uint256 _pid) public nonReentrant {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][msg.sender];
     pool.lpToken.safeTransfer(address(msg.sender), user.amount);
