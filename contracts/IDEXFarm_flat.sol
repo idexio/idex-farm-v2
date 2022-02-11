@@ -600,17 +600,6 @@ contract ReentrancyGuard {
 
 // import "@nomiclabs/buidler/console.sol";
 
-interface IIDEXMigrator {
-  // Perform LP token migration from legacy.
-  // Take the current LP token address and return the new LP token address.
-  // Migrator should have full access to the caller's LP token.
-  // Return the new LP token address.
-  //
-  // XXX Migrator must have allowance access to original LP tokens and must
-  // mint EXACTLY the same amount of new LP tokens.
-  function migrate(IERC20 token, bool isToken1Quote, address WETH) external returns (IERC20);
-}
-
 contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
@@ -648,8 +637,6 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
   // Reward tokens created per block.
   uint256 public reward0TokenPerBlock;
   uint256 public reward1TokenPerBlock;
-  // The migrator contract. It has a lot of power. Can only be set through governance (owner).
-  IIDEXMigrator public migrator;
 
   // Info of each pool.
   PoolInfo[] public poolInfo;
@@ -712,24 +699,6 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
       _allocPoint
     );
     poolInfo[_pid].allocPoint = _allocPoint;
-  }
-
-  // Set the migrator contract. Can only be called by the owner.
-  function setMigrator(IIDEXMigrator _migrator) public onlyOwner {
-    require(address(migrator) == address(0), 'setMigrator: already set');
-    migrator = _migrator;
-  }
-
-  // Migrate lp token to another lp contract. We trust that migrator contract is good.
-  function migrate(uint256 _pid, bool isToken1Quote, address WETH) public onlyOwner {
-    require(address(migrator) != address(0), 'migrate: no migrator');
-    PoolInfo storage pool = poolInfo[_pid];
-    IERC20 lpToken = pool.lpToken;
-    uint256 bal = lpToken.balanceOf(address(this));
-    lpToken.safeApprove(address(migrator), bal);
-    IERC20 newLpToken = migrator.migrate(lpToken, isToken1Quote, WETH);
-    require(bal == newLpToken.balanceOf(address(this)), 'migrate: bad');
-    pool.lpToken = newLpToken;
   }
 
   // Return reward multiplier over the given _from to _to block.
