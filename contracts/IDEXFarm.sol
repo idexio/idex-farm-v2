@@ -70,7 +70,7 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
     reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
-  // Necessary to allow native MATIC as a reward
+  // Necessary to allow native token as a reward
   receive() external payable { }
 
   function poolLength() external view returns (uint256) {
@@ -268,7 +268,7 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
     if (address(rewardToken) == address(0x0)) {
       require(
         _to.send(_amount),
-        'safeRewardTokenTransfer: MATIC transfer failed'
+        'safeRewardTokenTransfer: native token transfer failed'
       );
     } else {
       // No need to validate transfer as reward token contract is already vetted
