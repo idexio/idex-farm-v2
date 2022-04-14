@@ -10,7 +10,7 @@
     "build"
   ],
   "homepage": "https://github.com/idexio/idex-farm-v2",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Source code for the IDEX LP farming contracts",
   "scripts": {
     "migrate": "truffle migrate --network bscTestnet --reset",
