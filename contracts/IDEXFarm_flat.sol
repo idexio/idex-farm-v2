@@ -535,27 +535,80 @@ contract Ownable is Context {
     }
 }
 
-// File: contracts/IDEXFarm.sol
+// File: @openzeppelin/contracts/utils/ReentrancyGuard.sol
 
-interface IIDEXMigrator {
-  // Perform LP token migration from legacy.
-  // Take the current LP token address and return the new LP token address.
-  // Migrator should have full access to the caller's LP token.
-  // Return the new LP token address.
-  //
-  // XXX Migrator must have allowance access to original LP tokens and must
-  // mint EXACTLY the same amount of new LP tokens.
-  function migrate(IERC20 token, bool isToken1Quote, address WETH) external returns (IERC20); 
+/**
+ * @dev Contract module that helps prevent reentrant calls to a function.
+ *
+ * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
+ * available, which can be applied to functions to make sure there are no nested
+ * (reentrant) calls to them.
+ *
+ * Note that because there is a single `nonReentrant` guard, functions marked as
+ * `nonReentrant` may not call one another. This can be worked around by making
+ * those functions `private`, and then adding `external` `nonReentrant` entry
+ * points to them.
+ *
+ * TIP: If you would like to learn more about reentrancy and alternative ways
+ * to protect against it, check out our blog post
+ * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
+ */
+contract ReentrancyGuard {
+    // Booleans are more expensive than uint256 or any type that takes up a full
+    // word because each write operation emits an extra SLOAD to first read the
+    // slot's contents, replace the bits taken up by the boolean, and then write
+    // back. This is the compiler's defense against contract upgrades and
+    // pointer aliasing, and it cannot be disabled.
+
+    // The values being non-zero value makes deployment a bit more expensive,
+    // but in exchange the refund on every call to nonReentrant will be lower in
+    // amount. Since refunds are capped to a percentage of the total
+    // transaction's gas, it is best to keep them low in cases like this one, to
+    // increase the likelihood of the full refund coming into effect.
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+
+    uint256 private _status;
+
+    constructor () internal {
+        _status = _NOT_ENTERED;
+    }
+
+    /**
+     * @dev Prevents a contract from calling itself, directly or indirectly.
+     * Calling a `nonReentrant` function from another `nonReentrant`
+     * function is not supported. It is possible to prevent this from happening
+     * by making the `nonReentrant` function external, and make it call a
+     * `private` function that does the actual work.
+     */
+    modifier nonReentrant() {
+        // On the first call to nonReentrant, _notEntered will be true
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+
+        // Any calls to nonReentrant after this point will fail
+        _status = _ENTERED;
+
+        _;
+
+        // By storing the original value once again, a refund is triggered (see
+        // https://eips.ethereum.org/EIPS/eip-2200)
+        _status = _NOT_ENTERED;
+    }
 }
 
-contract IDEXFarm is Ownable {
+// File: contracts/IDEXFarm.sol
+
+// import "@nomiclabs/buidler/console.sol";
+
+contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
   using SafeMath for uint256;
   using SafeERC20 for IERC20;
 
   // Info of each user.
   struct UserInfo {
     uint256 amount; // How many LP tokens the user has provided.
-    uint256 rewardDebt; // Reward debt. See explanation below.
+    uint256 reward0Debt; // Reward debt. See explanation below.
+    uint256 reward1Debt; // Reward debt. See explanation below.
     //
     // We do some fancy math here. Basically, any point in time, the amount of reward tokens
     // entitled to a user but is pending to be distributed is:
@@ -574,15 +627,16 @@ contract IDEXFarm is Ownable {
     IERC20 lpToken; // Address of LP token contract.
     uint256 allocPoint; // How many allocation points assigned to this pool. Reward to distribute per block.
     uint256 lastRewardBlock; // Last block number that reward distribution occurs.
-    uint256 accRewardPerShare; // Accumulated rewards per share, times 1e12. See below.
+    uint256 accReward0PerShare; // Accumulated rewards per share, times 1e12. See below.
+    uint256 accReward1PerShare; // Accumulated rewards per share, times 1e12. See below.
   }
 
-  // The reward token
-  IERC20 public rewardToken;
+  // The reward tokens
+  IERC20 public reward0Token;
+  IERC20 public reward1Token;
   // Reward tokens created per block.
-  uint256 public rewardTokenPerBlock;
-  // The migrator contract. It has a lot of power. Can only be set through governance (owner).
-  IIDEXMigrator public migrator;
+  uint256 public reward0TokenPerBlock;
+  uint256 public reward1TokenPerBlock;
 
   // Info of each pool.
   PoolInfo[] public poolInfo;
@@ -599,9 +653,11 @@ contract IDEXFarm is Ownable {
     uint256 amount
   );
 
-  constructor(IERC20 _rewardToken, uint256 _rewardTokenPerBlock) public {
-    rewardToken = _rewardToken;
-    rewardTokenPerBlock = _rewardTokenPerBlock;
+  constructor(IERC20 _reward0Token, IERC20 _reward1Token, uint256 _reward0TokenPerBlock, uint256 _reward1TokenPerBlock) public {
+    reward0Token = _reward0Token;
+    reward1Token = _reward1Token;
+    reward0TokenPerBlock = _reward0TokenPerBlock;
+    reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
   function poolLength() external view returns (uint256) {
@@ -624,7 +680,8 @@ contract IDEXFarm is Ownable {
         lpToken: _lpToken,
         allocPoint: _allocPoint,
         lastRewardBlock: block.number,
-        accRewardPerShare: 0
+        accReward0PerShare: 0,
+        accReward1PerShare: 0
       })
     );
   }
@@ -644,24 +701,6 @@ contract IDEXFarm is Ownable {
     poolInfo[_pid].allocPoint = _allocPoint;
   }
 
-  // Set the migrator contract. Can only be called by the owner.
-  function setMigrator(IIDEXMigrator _migrator) public onlyOwner {
-    require(address(migrator) == address(0), 'setMigrator: already set');
-    migrator = _migrator;
-  }
-
-  // Migrate lp token to another lp contract. Can be called by anyone. We trust that migrator contract is good.
-  function migrate(uint256 _pid, bool isToken1Quote, address WETH) public onlyOwner {
-    require(address(migrator) != address(0), 'migrate: no migrator');
-    PoolInfo storage pool = poolInfo[_pid];
-    IERC20 lpToken = pool.lpToken;
-    uint256 bal = lpToken.balanceOf(address(this));
-    lpToken.safeApprove(address(migrator), bal);
-    IERC20 newLpToken = migrator.migrate(lpToken, isToken1Quote, WETH);
-    require(bal == newLpToken.balanceOf(address(this)), 'migrate: bad');
-    pool.lpToken = newLpToken;
-  } 
-
   // Return reward multiplier over the given _from to _to block.
   function getMultiplier(uint256 _from, uint256 _to)
     public
@@ -675,23 +714,34 @@ contract IDEXFarm is Ownable {
   function pendingReward(uint256 _pid, address _user)
     external
     view
-    returns (uint256)
+    returns (uint256, uint256)
   {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][_user];
-    uint256 accRewardPerShare = pool.accRewardPerShare;
+    uint256 accReward0PerShare = pool.accReward0PerShare;
+    uint256 accReward1PerShare = pool.accReward1PerShare;
     uint256 lpSupply = pool.lpToken.balanceOf(address(this));
     if (block.number > pool.lastRewardBlock && lpSupply != 0) {
       uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-      uint256 rewardQuantity =
-        multiplier.mul(rewardTokenPerBlock).mul(pool.allocPoint).div(
+      uint256 reward0Quantity =
+        multiplier.mul(reward0TokenPerBlock).mul(pool.allocPoint).div(
           totalAllocPoint
         );
-      accRewardPerShare = accRewardPerShare.add(
-        rewardQuantity.mul(1e12).div(lpSupply)
+      uint256 reward1Quantity =
+        multiplier.mul(reward1TokenPerBlock).mul(pool.allocPoint).div(
+          totalAllocPoint
+        );
+      accReward0PerShare = accReward0PerShare.add(
+        reward0Quantity.mul(1e12).div(lpSupply)
+      );
+      accReward1PerShare = accReward1PerShare.add(
+        reward1Quantity.mul(1e12).div(lpSupply)
       );
     }
-    return user.amount.mul(accRewardPerShare).div(1e12).sub(user.rewardDebt);
+    return (
+      user.amount.mul(accReward0PerShare).div(1e12).sub(user.reward0Debt),
+      user.amount.mul(accReward1PerShare).div(1e12).sub(user.reward1Debt)
+    );
   }
 
   // Update reward variables for all pools. Be careful of gas spending!
@@ -714,26 +764,38 @@ contract IDEXFarm is Ownable {
       return;
     }
     uint256 multiplier = getMultiplier(pool.lastRewardBlock, block.number);
-    uint256 rewardQuantity =
-      multiplier.mul(rewardTokenPerBlock).mul(pool.allocPoint).div(
+    uint256 reward0Quantity =
+      multiplier.mul(reward0TokenPerBlock).mul(pool.allocPoint).div(
         totalAllocPoint
       );
-    pool.accRewardPerShare = pool.accRewardPerShare.add(
-      rewardQuantity.mul(1e12).div(lpSupply)
+    uint256 reward1Quantity =
+      multiplier.mul(reward1TokenPerBlock).mul(pool.allocPoint).div(
+        totalAllocPoint
+      );
+    pool.accReward0PerShare = pool.accReward0PerShare.add(
+      reward0Quantity.mul(1e12).div(lpSupply)
+    );
+    pool.accReward1PerShare = pool.accReward1PerShare.add(
+      reward1Quantity.mul(1e12).div(lpSupply)
     );
     pool.lastRewardBlock = block.number;
   }
 
   // Deposit LP tokens to Farm for reward allocation.
-  function deposit(uint256 _pid, uint256 _amount) public {
+  function deposit(uint256 _pid, uint256 _amount) public nonReentrant {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][msg.sender];
     updatePool(_pid);
     if (user.amount > 0) {
-      uint256 pending =
-        user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt);
-      if (pending > 0) {
-        safeRewardTokenTransfer(msg.sender, pending);
+      uint256 pending0 =
+        user.amount.mul(pool.accReward0PerShare).div(1e12).sub(user.reward0Debt);
+      uint256 pending1 =
+        user.amount.mul(pool.accReward1PerShare).div(1e12).sub(user.reward1Debt);
+      if (pending0 > 0) {
+        safeRewardTokenTransfer(reward0Token, msg.sender, pending0);
+      }
+      if (pending1 > 0) {
+        safeRewardTokenTransfer(reward1Token, msg.sender, pending1);
       }
     }
     if (_amount > 0) {
@@ -744,41 +806,49 @@ contract IDEXFarm is Ownable {
       );
       user.amount = user.amount.add(_amount);
     }
-    user.rewardDebt = user.amount.mul(pool.accRewardPerShare).div(1e12);
+    user.reward0Debt = user.amount.mul(pool.accReward0PerShare).div(1e12);
+    user.reward1Debt = user.amount.mul(pool.accReward1PerShare).div(1e12);
     emit Deposit(msg.sender, _pid, _amount);
   }
 
   // Withdraw LP tokens from Farm.
-  function withdraw(uint256 _pid, uint256 _amount) public {
+  function withdraw(uint256 _pid, uint256 _amount) public nonReentrant {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][msg.sender];
     require(user.amount >= _amount, 'withdraw: not good');
     updatePool(_pid);
-    uint256 pending =
-      user.amount.mul(pool.accRewardPerShare).div(1e12).sub(user.rewardDebt);
-    if (pending > 0) {
-      safeRewardTokenTransfer(msg.sender, pending);
+    uint256 pending0 =
+      user.amount.mul(pool.accReward0PerShare).div(1e12).sub(user.reward0Debt);
+    uint256 pending1 =
+      user.amount.mul(pool.accReward1PerShare).div(1e12).sub(user.reward1Debt);
+    if (pending0 > 0) {
+      safeRewardTokenTransfer(reward0Token, msg.sender, pending0);
+    }
+    if (pending1 > 0) {
+      safeRewardTokenTransfer(reward1Token, msg.sender, pending1);
     }
     if (_amount > 0) {
       user.amount = user.amount.sub(_amount);
       pool.lpToken.safeTransfer(address(msg.sender), _amount);
     }
-    user.rewardDebt = user.amount.mul(pool.accRewardPerShare).div(1e12);
+    user.reward0Debt = user.amount.mul(pool.accReward0PerShare).div(1e12);
+    user.reward1Debt = user.amount.mul(pool.accReward1PerShare).div(1e12);
     emit Withdraw(msg.sender, _pid, _amount);
   }
 
   // Withdraw without caring about rewards. EMERGENCY ONLY.
-  function emergencyWithdraw(uint256 _pid) public {
+  function emergencyWithdraw(uint256 _pid) public nonReentrant {
     PoolInfo storage pool = poolInfo[_pid];
     UserInfo storage user = userInfo[_pid][msg.sender];
     pool.lpToken.safeTransfer(address(msg.sender), user.amount);
     emit EmergencyWithdraw(msg.sender, _pid, user.amount);
     user.amount = 0;
-    user.rewardDebt = 0;
+    user.reward0Debt = 0;
+    user.reward1Debt = 0;
   }
 
   // Safe token transfer function, just in case pool does not have enough rewards.
-  function safeRewardTokenTransfer(address _to, uint256 _amount) private {
+  function safeRewardTokenTransfer(IERC20 rewardToken, address _to, uint256 _amount) private {
     uint256 rewardBalance = rewardToken.balanceOf(address(this));
     require(rewardBalance >= _amount, 'safeRewardTokenTransfer: insufficient balance');
 
@@ -788,17 +858,19 @@ contract IDEXFarm is Ownable {
   // Admin controls //
 
   // Assert _withUpdate or new emission rate will be retroactive to last update for all pools
-  function setRewardPerBlock(uint256 _rewardTokenPerBlock, bool _withUpdate)
+  function setRewardsPerBlock(uint256 _reward0TokenPerBlock, uint256 _reward1TokenPerBlock, bool _withUpdate)
     external
     onlyOwner
   {
     if (_withUpdate) {
       massUpdatePools();
     }
-    rewardTokenPerBlock = _rewardTokenPerBlock;
+    reward0TokenPerBlock = _reward0TokenPerBlock;
+    reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
-  function withdrawRewardToken(uint256 _amount) external onlyOwner {
+  function withdrawRewardToken(IERC20 rewardToken, uint256 _amount) external onlyOwner {
+    require(rewardToken == reward0Token || rewardToken == reward1Token, 'withdrawRewardToken: invalid rewardToken');
     rewardToken.transfer(msg.sender, _amount);
   }
 }
