@@ -70,6 +70,8 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
     reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
+  receive() external payable { }
+
   function poolLength() external view returns (uint256) {
     return poolInfo.length;
   }
