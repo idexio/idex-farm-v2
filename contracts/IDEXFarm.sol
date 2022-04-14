@@ -70,6 +70,7 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
     reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
+  // Necessary to allow native MATIC as a reward
   receive() external payable { }
 
   function poolLength() external view returns (uint256) {
@@ -270,6 +271,7 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
         'safeRewardTokenTransfer: MATIC transfer failed'
       );
     } else {
+      // No need to validate transfer as reward token contract is already vetted
       rewardToken.transfer(_to, _amount);
     }
   }
