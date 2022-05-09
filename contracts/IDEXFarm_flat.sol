@@ -660,6 +660,9 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
     reward1TokenPerBlock = _reward1TokenPerBlock;
   }
 
+  // Necessary to allow native token as a reward
+  receive() external payable { }
+
   function poolLength() external view returns (uint256) {
     return poolInfo.length;
   }
@@ -848,11 +851,19 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
   }
 
   // Safe token transfer function, just in case pool does not have enough rewards.
-  function safeRewardTokenTransfer(IERC20 rewardToken, address _to, uint256 _amount) private {
-    uint256 rewardBalance = rewardToken.balanceOf(address(this));
+  function safeRewardTokenTransfer(IERC20 rewardToken, address payable _to, uint256 _amount) private {
+    uint256 rewardBalance = address(rewardToken) == address(0x0) ? address(this).balance : rewardToken.balanceOf(address(this));
     require(rewardBalance >= _amount, 'safeRewardTokenTransfer: insufficient balance');
 
-    rewardToken.transfer(_to, _amount);
+    if (address(rewardToken) == address(0x0)) {
+      require(
+        _to.send(_amount),
+        'safeRewardTokenTransfer: native token transfer failed'
+      );
+    } else {
+      // No need to validate transfer as reward token contract is already vetted
+      rewardToken.transfer(_to, _amount);
+    }
   }
 
   // Admin controls //
@@ -871,6 +882,7 @@ contract IDEXFarm_v2 is Ownable, ReentrancyGuard {
 
   function withdrawRewardToken(IERC20 rewardToken, uint256 _amount) external onlyOwner {
     require(rewardToken == reward0Token || rewardToken == reward1Token, 'withdrawRewardToken: invalid rewardToken');
-    rewardToken.transfer(msg.sender, _amount);
+
+    safeRewardTokenTransfer(rewardToken, msg.sender, _amount);
   }
 }
